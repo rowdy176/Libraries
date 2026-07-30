@@ -1,73 +1,205 @@
-# TouchObserver
+--!strict
 
-A small wrapper around `BasePart.Touched` that provides cooldowns, filtering, and separate signals for players, characters, and humanoids.
+--[=[
+    @class TouchObserver
+    
+    Observes touches on a part and fires events for players, characters, and humanoids.
+    Supports filters and cooldowns to manage touch events.
+]=]
 
-Useful when you don't want to repeatedly write the same touch validation logic.
+--========== Services ==========--
+const Players = game:GetService("Players")
 
-## Example
+--========== Dependencies ==========--
+const Signal = require(script.Parent.Signal)
 
-```luau
-const TouchObserver = require(path.To.TouchObserver)
+--========== Export Types ==========--
+export type TouchObserver = {
+	Part: BasePart,
+	Cooldown: number,
+	PlayerTouched: Signal.Signal<Player>,
+	CharacterTouched: Signal.Signal<Model>,
+	HumanoidTouched: Signal.Signal<Humanoid>,
+	_Touches: {},
+	_Filters: {},
+	_Alive: true,
+	_Connection: RBXScriptConnection,
 
-const Observer = TouchObserver.new(workspace.Part)
+	new: (Part: BasePart, Cooldown: number?) -> TouchObserver,
+	AddFilter: (self: TouchObserver, FilterFunction: () -> boolean) -> TouchObserver,
+	SetCooldown: (self: TouchObserver, Cooldown: number) -> (),
+	Destroy: (self: TouchObserver) -> (),
+}
 
-Observer.PlayerTouched:Connect(function(Player)
-	print(Player.Name .. " touched the part!")
-end)
+--========== Module ==========--
+const TouchObserver = {}
+TouchObserver.__index = TouchObserver
 
---// If this filter function returns false, the Touched connection stops before sending a signal.
-Observer:AddFilter(function(Character, Humanoid)
-	return Humanoid.Health > 0
-end)
-```
+--========== Helpers ==========--
 
-## API
+--[=[
+    Resolves the character and humanoid from a hit part.
 
-### `TouchObserver.new(Part: BasePart, Cooldown: number?)`
+    @within TouchObserver
+    @function ResolveCharacter
+    @private
 
-Creates a new observer for a part.
+    @param Hit BasePart
 
-### Design choice
+    @return Model?
+    @return Humanoid?
+]=]
+const function ResolveCharacter(Hit: BasePart): (Model?, Humanoid?)
+	const Character = Hit.Parent
+	if not Character then return end
+	
+	const Humanoid = Character:FindFirstChildOfClass("Humanoid")
+	if not Humanoid then return end
+	
+	return Character, Humanoid
+end
 
-* The cooldown defaults to `0.15` seconds and is applied per character.
+--[=[
+    Checks if a character and humanoid pass all filters.
 
-### Signals
+    @within TouchObserver
+    @function PassesFilters
+    @private
 
-#### `PlayerTouched: Signal<Player>`
+    @param self TouchObserver
+    @param Character Model
+    @param Humanoid Humanoid
 
-Fires when a player touches the part.
+    @return boolean
+]=]
+const function PassesFilters(self: TouchObserver, Character: Model, Humanoid: Humanoid): boolean
+	if not self._Filters then
+		return true
+	end
+	
+	for _, Filter in self._Filters do
+		local Result = Filter(Character, Humanoid)
+		if not Result then
+			return false
+		end
+	end
+	
+	return true
+end
 
-#### `CharacterTouched: Signal<Model>`
+--========== Public API ==========--
 
-Fires whenever a valid character touches the part.
+--[=[
+	Creates a new TouchObserver for the specified part.
 
-#### `HumanoidTouched: Signal<Humanoid>`
+	@within TouchObserver
+	@function new
 
-Fires whenever a valid humanoid touches the part.
+	@param Part BasePart
+	@param Cooldown number? -- Optional cooldown duration in seconds (default: 0.15)
 
-### `Observer:AddFilter(FilterFunction)`
+	@return TouchObserver
+]=]
+function TouchObserver.new(Part: BasePart, Cooldown: number?): TouchObserver
+	const self = setmetatable({} :: TouchObserver, TouchObserver)
+	
+	self.Part = Part
+	self.Cooldown = Cooldown or 0.15
+	self._Touches = {}
+	self._Filters = {}
+	
+	self._Alive = true
+	
+	self.PlayerTouched = Signal.new() :: Signal.Signal<Player>
+	self.CharacterTouched = Signal.new() :: Signal.Signal<Model>
+	self.HumanoidTouched = Signal.new() :: Signal.Signal<Humanoid>
+	
+	self._Connection = Part.Touched:Connect(function(Hit: BasePart)
+		if not self._Alive then return end
+		const Character, Humanoid = ResolveCharacter(Hit)
+		if not Character or not Humanoid then return end
+		
+		if not PassesFilters(self, Character, Humanoid) then
+			return
+		end
+		
+		const Time = tick()
+		const Last = self._Touches[Character]
+		
+		if Last and (Time - Last) < self.Cooldown then return end
+		
+		self._Touches[Character] = Time
+		
+		const Player = Players:GetPlayerFromCharacter(Character)
+		
+		self.CharacterTouched:Fire(Character)
+		self.HumanoidTouched:Fire(Humanoid)
+		
+		if not Player then return end
+		self.PlayerTouched:Fire(Player)
+	end)
+	
+	return self
+end
 
-Adds a filter that runs before any signals fire.
+--[=[
+	Adds a filter function to the observer.
+	The filter function should return true to allow the touch event to proceed, or false to block it.
 
-The filter receives the touching `Character` and `Humanoid`.
+	@within TouchObserver
+	@method AddFilter
 
-Return `true` to allow the touch or `false` to ignore it.
+	@param FilterFunction () -> boolean
 
-Multiple filters can be added. Every filter must pass for the touch to be accepted.
+	@return TouchObserver
+]=]
+const function TouchObserver.AddFilter(self: TouchObserver, FilterFunction: () -> boolean): TouchObserver
+	if not self._Filters then
+		self._Filters = {}
+	end
+	
+	table.insert(self._Filters, FilterFunction)
+	return self
+end
 
-### `Observer:SetCooldown(Cooldown: number)`
+--[=[
+	Sets the cooldown duration for touch events.
+	Touch events from the same character will be ignored if they occur within this cooldown period.
 
-Changes the cooldown duration.
+	@within TouchObserver
+	@method SetCooldown
 
-### `Observer:Destroy()`
+	@param Cooldown number
 
-Disconnects the observer and destroys all internal signals.
+	@return void
+]=]
+const function TouchObserver.SetCooldown(self: TouchObserver, Cooldown: number): ()
+	if Cooldown <= 0 then return end
+	self.Cooldown = Cooldown
+end
 
+--[=[
+	Destroys the observer and cleans up all resources.
 
-## <b> Design choices </b>
+	@within TouchObserver
+	@method Destroy
 
-* Cooldowns are tracked per character, not globally.
-* Invalid touches (non-characters, missing humanoids, failed filters) are ignored.
-* All three signals fire for player characters. NPCs only fire `CharacterTouched` and `HumanoidTouched`.
-* Filters are evaluated before cooldowns or signals.
-* Additional features may be added over time if I or others find them useful.
+	@return void
+]=]
+const function TouchObserver:Destroy(): ()
+	self._Alive = false
+	
+	if self._Connection then
+		self._Connection:Disconnect()
+	end
+	
+	self.PlayerTouched:Destroy()
+	self.CharacterTouched:Destroy()
+	self.HumanoidTouched:Destroy()
+	
+	table.clear(self._Touches)
+	table.clear(self._Filters or {})
+end
+
+--========== Return ==========--
+return TouchObserver
