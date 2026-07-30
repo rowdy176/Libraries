@@ -27,7 +27,7 @@ end)
 
 Creates a new observer for a part.
 
-<b> Design choice </b>
+### Design choice
 
 * The cooldown defaults to `0.15` seconds and is applied per character.
 
