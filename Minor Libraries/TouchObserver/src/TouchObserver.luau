@@ -78,7 +78,7 @@ const function PassesFilters(self: TouchObserver, Character: Model, Humanoid: Hu
 	end
 	
 	for _, Filter in self._Filters do
-		local Result = Filter(Character, Humanoid)
+		const Result = Filter(Character, Humanoid)
 		if not Result then
 			return false
 		end
