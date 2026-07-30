@@ -27,7 +27,7 @@ end)
 
 Creates a new observer for a part.
 
-### Design choice
+<b> Design choice </b>
 
 * The cooldown defaults to `0.15` seconds and is applied per character.
 
@@ -64,7 +64,7 @@ Changes the cooldown duration.
 Disconnects the observer and destroys all internal signals.
 
 
-## <b> Design choices </b>
+## Design choices
 
 * Cooldowns are tracked per character, not globally.
 * Invalid touches (non-characters, missing humanoids, failed filters) are ignored.
