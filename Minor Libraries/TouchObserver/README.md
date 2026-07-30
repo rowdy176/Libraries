@@ -64,7 +64,7 @@ Changes the cooldown duration.
 Disconnects the observer and destroys all internal signals.
 
 
-## <b> Design choices </b>
+## Design choices
 
 * Cooldowns are tracked per character, not globally.
 * Invalid touches (non-characters, missing humanoids, failed filters) are ignored.
