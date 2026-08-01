@@ -15,6 +15,34 @@
 
 --========== Constants ==========--
 const Ownership: {[any]: {Owner: Steward, Kind: string}} = setmetatable({}, {__mode = "k"}) :: any
+const CleanupMethods = {
+	["RBXScriptConnection"] = function(obj: RBXScriptConnection)
+		obj:Disconnect()
+	end,
+
+	["Instance"] = function(obj: Instance)
+		if obj:IsA("Tween") then
+			(obj :: Tween):Cancel()
+		end
+		obj:Destroy()
+	end,
+
+	["thread"] = function(obj: thread)
+		task.cancel(obj)
+	end,
+
+	["function"] = function(obj: CleanupFn)
+		obj()
+	end,
+
+	["table"] = function(obj: any)
+		if typeof(obj.Disconnect) == "function" then
+			obj:Disconnect()
+		elseif typeof(obj.Destroy) == "function" then
+			obj:Destroy()
+		end
+	end,
+}
 
 --========== Dependencies ==========--
 const Types = require(script.Parent.Types)
@@ -68,9 +96,9 @@ export type Steward = {
 --========== Helpers ==========--
 
 --[=[
-@private
-@function ClaimOwnership
-@within Steward
+	@private
+	@function ClaimOwnership
+	@within Steward
 ]=]
 const function ClaimOwnership(self: Steward, Resource: any, Kind: string, List: {any}): ()
 	const Existing = Ownership[Resource]
@@ -90,115 +118,33 @@ const function ClaimOwnership(self: Steward, Resource: any, Kind: string, List: 
 end
 
 --[=[
-@private
-@function SafeDisconnect
-@within Steward
+	@private
+	@function SafeCleanup
+	@within Steward
 ]=]
-const function SafeDisconnect(Connection: RBXScriptConnection): ()
-	const ok, err = pcall(function()
-		Connection:Disconnect()
-	end)
+const function SafeCleanup(Object: any)
+	if Object == nil then
+		return
+	end
+
+	const ObjType = typeof(Object)
+	const CleanupFn = CleanupMethods[ObjType]
 	
-	if not ok then
-		warn("[Steward] connection cleanup failed: " .. tostring(err))
+	if CleanupFn then
+		const ok, err = pcall(CleanupFn, Object)
+
+		if not ok then
+			warn("[Steward] cleanup failed for type " .. ObjType .. ": " .. tostring(err))
+		end
+	else
+		warn("[Steward] no cleanup method defined for type: " .. ObjType)
 	end
 end
 
 --[=[
-@private
-@function SafeCancelThread
-@within Steward
-]=]
-const function SafeCancelThread(Thread: thread): ()
-	const ok, err = pcall(function()
-		task.cancel(Thread)
-	end)
-	
-	if not ok then
-		warn("[Steward] thread cancellation failed: " .. tostring(err))
-	end
-end
-
---[=[
-@private
-@function SafeCancelTween
-@within Steward
-]=]
-const function SafeCancelTween(Tween: Tween): ()
-	const ok, err = pcall(function()
-		Tween:Cancel()
-		Tween:Destroy()
-	end)
-	
-	if not ok then
-		warn("[Steward] tween cleanup failed: " .. tostring(err))
-	end
-end
-
---[=[
-@private
-@function SafeDestroyInstance
-@within Steward
-]=]
-const function SafeDestroyInstance(Instance: Instance): ()
-	const ok, err = pcall(function()
-		Instance:Destroy()
-	end)
-	
-	if not ok then
-		warn("[Steward] instance cleanup failed: " .. tostring(err))
-	end
-end
-
---[=[
-@private
-@function SafeDestroy
-@within Steward
-]=]
-const function SafeDestroy(Object: Destroyable): ()
-	const ok, err = pcall(function()
-		Object:Destroy()
-	end)
-	
-	if not ok then
-		warn("[Steward] destroyable cleanup failed: " .. tostring(err))
-	end
-end
-
---[=[
-@private
-@function SafeDisconnectObject
-@within Steward
-]=]
-const function SafeDisconnectObject(Object: Disconnectable): ()
-	const ok, err = pcall(function()
-		Object:Disconnect()
-	end)
-	
-	if not ok then
-		warn("[Steward] disconnectable cleanup failed: " .. tostring(err))
-	end
-end
-
---[=[
-@private
-@function SafeCallCleanup
-@within Steward
-]=]
-const function SafeCallCleanup(fn: CleanupFn): ()
-	const ok, err = pcall(function()
-		fn()
-	end)
-	
-	if not ok then
-		warn("[Steward] cleanup function failed: " .. tostring(err))
-	end
-end
-
---[=[
-@private
-@function IsAncestorOf
-@within Steward
+	@private
+	@function IsAncestorOf
+	@within Steward
 ]=]
 const function IsAncestorOf(Candidate: Steward, Node: Steward): boolean
 	local Current: Steward? = Node._parent
@@ -217,12 +163,13 @@ end
 local nextId: number = 1
 
 --[=[
-@within Steward
+	Constructs a new Steward object. If a name is not provided, it will be replaced by an ID.
 
-Constructs a new Steward object. If a name is not provided, it will be replaced by an ID.
+	@within Steward
+	@function new
 
-@param name string? -- Optional name for the Steward object
-@return Steward
+	@param name string? -- Optional name for the Steward object
+	@return Steward
 ]=]
 function Steward.new(name: string?): Steward
 	const id: number = nextId
@@ -250,17 +197,17 @@ end
 --========== Public API ==========--
 
 --[=[
-@within Steward
-@method AdoptConnection
+	Adopts a connection to a Steward object.
 
-Adopts a connection to a Steward object.
+	@within Steward
+	@method AdoptConnection
 
-@param Connection RBXScriptConnection -- Connection to adopt
-@return RBXScriptConnection
+	@param Connection RBXScriptConnection -- Connection to adopt
+	@return RBXScriptConnection
 ]=]
 function Steward.AdoptConnection(self: Steward, Connection: RBXScriptConnection): RBXScriptConnection
 	if self.Dismissed then
-		SafeDisconnect(Connection)
+		SafeCleanup(Connection)
 		return Connection
 	end
 	
@@ -270,17 +217,17 @@ function Steward.AdoptConnection(self: Steward, Connection: RBXScriptConnection)
 end
 
 --[=[
-@within Steward
-@method AdoptThread
+	Adopts a thread to a Steward object.
 
-Adopts a thread to a Steward object.
+	@within Steward
+	@method AdoptThread
 
-@param Thread thread -- Thread to adopt
-@return thread
+	@param Thread thread -- Thread to adopt
+	@return thread
 ]=]
 function Steward.AdoptThread(self: Steward, Thread: thread): thread
 	if self.Dismissed then
-		SafeCancelThread(Thread)
+		SafeCleanup(Thread)
 		return Thread
 	end
 	
@@ -290,17 +237,17 @@ function Steward.AdoptThread(self: Steward, Thread: thread): thread
 end
 
 --[=[
-@within Steward
-@method AdoptTween
+	Adopts a tween to a Steward object.
 
-Adopts a tween to a Steward object.
+	@within Steward
+	@method AdoptTween
 
-@param Tween Tween -- Tween to adopt
-@return Tween
+	@param Tween Tween -- Tween to adopt
+	@return Tween
 ]=]
 function Steward.AdoptTween(self: Steward, Tween: Tween): Tween
 	if self.Dismissed then
-		SafeCancelTween(Tween)
+		SafeCleanup(Tween)
 		return Tween
 	end
 	
@@ -310,17 +257,17 @@ function Steward.AdoptTween(self: Steward, Tween: Tween): Tween
 end
 
 --[=[
-@within Steward
-@method AdoptInstance
+	Adopts an instance to a Steward object
 
-Adopts an instance to a Steward object
+	@within Steward
+	@method AdoptInstance
 
-@param instance Instance
-@return Instance
+	@param instance Instance
+	@return Instance
 ]=]
 function Steward.AdoptInstance(self: Steward, instance: Instance): Instance
 	if self.Dismissed then
-		SafeDestroyInstance(instance)
+		SafeCleanup(instance)
 		return instance
 	end
 	
@@ -330,13 +277,13 @@ function Steward.AdoptInstance(self: Steward, instance: Instance): Instance
 end
 
 --[=[
-@within Steward
-@method AdoptDestroyable
+	Adopts a destroyable object to a Steward object
 
-Adopts a destroyable object to a Steward object
+	@within Steward
+	@method AdoptDestroyable
 
-@param Object T -- Object to adopt
-@return T
+	@param Object T -- Object to adopt
+	@return T
 ]=]
 function Steward.AdoptDestroyable<T>(self: Steward, Object: T): T
 	const Dynamic: any = Object
@@ -347,7 +294,7 @@ function Steward.AdoptDestroyable<T>(self: Steward, Object: T): T
 	end
 	
 	if self.Dismissed then
-		SafeDestroy(Dynamic :: Destroyable)
+		SafeCleanup(Dynamic)
 		return Object
 	end
 	
@@ -357,13 +304,13 @@ function Steward.AdoptDestroyable<T>(self: Steward, Object: T): T
 end
 
 --[=[
-@within Steward
-@method AdoptDisconnectable
+	Adopts a disconnectable object to a Steward object
 
-Adopts a disconnectable object to a Steward object
-
-@param Object T -- Object to adopt
-@return T
+	@within Steward
+	@method AdoptDisconnectable
+	
+	@param Object T -- Object to adopt
+	@return T
 ]=]
 function Steward.AdoptDisconnectable<T>(self: Steward, Object: T): T
 	const Dynamic: any = Object
@@ -374,7 +321,7 @@ function Steward.AdoptDisconnectable<T>(self: Steward, Object: T): T
 	end
 	
 	if self.Dismissed then
-		SafeDisconnectObject(Dynamic :: Disconnectable)
+		SafeCleanup(Dynamic)
 		return Object
 	end
 	
@@ -384,17 +331,17 @@ function Steward.AdoptDisconnectable<T>(self: Steward, Object: T): T
 end
 
 --[=[
-@within Steward
-@method AddCleanup
+	Adds a cleanup function to the Steward object
 
-Adds a cleanup function to the Steward object
+	@within Steward
+	@method AddCleanup
 
-@param fn CleanupFn -- Function to call at cleanup
-@return CleanupFn
+	@param fn CleanupFn -- Function to call at cleanup
+	@return CleanupFn
 ]=]
 function Steward.AddCleanup(self: Steward, fn: CleanupFn): CleanupFn
 	if self.Dismissed then
-		SafeCallCleanup(fn)
+		SafeCleanup(fn)
 		return fn
 	end
 	
@@ -404,13 +351,13 @@ function Steward.AddCleanup(self: Steward, fn: CleanupFn): CleanupFn
 end
 
 --[=[
-@within Steward
-@method Adopt
+	Adopts a resource to a Steward object
 
-Adopts a resource to a Steward object
+	@within Steward
+	@method Adopt
 
-@param Resource T -- Resource to adopt
-@return T
+	@param Resource T -- Resource to adopt
+	@return T
 ]=]
 function Steward.Adopt<T>(self: Steward, Resource: T): T
 	const Dynamic: any = Resource
@@ -442,13 +389,13 @@ function Steward.Adopt<T>(self: Steward, Resource: T): T
 end
 
 --[=[
-@within Steward
-@method Nest
+	Nests a Steward object as a child of this one.
 
-Nests a Steward object as a child of this one.
+	@within Steward
+	@method Nest
 
-@param NameOrChild (string | Steward)? -- Name of the child, or the child itself
-@return Steward
+	@param NameOrChild (string | Steward)? -- Name of the child, or the child itself
+	@return Steward
 ]=]
 function Steward.Nest(self: Steward, NameOrChild: (string | Steward)?): Steward
 	local Child: Steward
@@ -491,13 +438,13 @@ function Steward.Nest(self: Steward, NameOrChild: (string | Steward)?): Steward
 end
 
 --[=[
-@within Steward
-@method AttachTo
+	Attaches a Steward to an Instance.
 
-Attaches a Steward to an Instance.
+	@within Steward
+	@method AttachTo
 
-@param instance Instance -- Instance to attach to
-@return Steward
+	@param instance Instance -- Instance to attach to
+	@return Steward
 ]=]
 function Steward.AttachTo(self: Steward, instance: Instance): Steward
 	if instance.Parent == game then
@@ -528,12 +475,12 @@ function Steward.AttachTo(self: Steward, instance: Instance): Steward
 end
 
 --[=[
-@within Steward
-@method Dismiss
+	Dismisses the Steward, cleaning up all resources it owns
 
-Dismisses the Steward, cleaning up all resources it owns
+	@within Steward
+	@method Dismiss
 
-@return void
+	@return void
 ]=]
 function Steward.Dismiss(self: Steward): ()
 	if self.Dismissed then
@@ -544,25 +491,25 @@ function Steward.Dismiss(self: Steward): ()
 	
 	const attachConnections = self._attachConnections
 	for i = 1, #attachConnections do
-		SafeDisconnect(attachConnections[i])
+		SafeCleanup(attachConnections[i])
 		attachConnections[i] = nil
 	end
 	
 	const Connections = self._connections
 	for i = 1, #Connections do
-		SafeDisconnect(Connections[i])
+		SafeCleanup(Connections[i])
 		Connections[i] = nil
 	end
 	
 	const Threads = self._threads
 	for i = 1, #Threads do
-		SafeCancelThread(Threads[i])
+		SafeCleanup(Threads[i])
 		Threads[i] = nil
 	end
 	
 	const Tweens = self._tweens
 	for i = 1, #Tweens do
-		SafeCancelTween(Tweens[i])
+		SafeCleanup(Tweens[i])
 		Tweens[i] = nil
 	end
 	
@@ -574,25 +521,25 @@ function Steward.Dismiss(self: Steward): ()
 	
 	const Instances = self._instances
 	for i = 1, #Instances do
-		SafeDestroyInstance(Instances[i])
+		SafeCleanup(Instances[i])
 		Instances[i] = nil
 	end
 	
 	const Destroyables = self._destroyables
 	for i = 1, #Destroyables do
-		SafeDestroy(Destroyables[i])
+		SafeCleanup(Destroyables[i])
 		Destroyables[i] = nil
 	end
 	
 	const Disconnectables = self._disconnectables
 	for i = 1, #Disconnectables do
-		SafeDisconnectObject(Disconnectables[i])
+		SafeCleanup(Disconnectables[i])
 		Disconnectables[i] = nil
 	end
 	
 	const Functions = self._functions
 	for i = 1, #Functions do
-		SafeCallCleanup(Functions[i])
+		SafeCleanup(Functions[i])
 		Functions[i] = nil
 	end
 	
@@ -611,13 +558,13 @@ function Steward.Dismiss(self: Steward): ()
 end
 
 --[=[
-@within Steward
-@method _snapshotNode
+	Creates a snapshot node of the current state of the Steward hierarchy
 
-Creates a snapshot node
+	@within Steward
+	@method _snapshotNode
+	@private
 
-@private
-@return SnapshotNode
+	@return SnapshotNode
 ]=]
 function Steward._snapshotNode(self: Steward): SnapshotNode
 	const Children = self._children
@@ -641,24 +588,24 @@ function Steward._snapshotNode(self: Steward): SnapshotNode
 end
 
 --[=[
-@within Steward
-@method Snapshot
+	Takes a snapshot of the current state of the Steward hierarchy
 
-Takes a snapshot of the current state of the Steward hierarchy
+	@within Steward
+	@method Snapshot
 
-@return Snapshot
+	@return Snapshot
 ]=]
 function Steward.Snapshot(self: Steward): Snapshot
 	return Debug.BuildSnapshot(self:_snapshotNode())
 end
 
 --[=[
-@within Steward
-@method Dump
+	Dumps the current state of the Steward hierarchy to the console
 
-Dumps the current state of the Steward hierarchy to the debug console
+	@within Steward
+	@method Dump
 
-@return string
+	@return string
 ]=]
 function Steward.Dump(self: Steward): string
 	const text = Debug.Dump(self:_snapshotNode())
@@ -669,13 +616,13 @@ function Steward.Dump(self: Steward): string
 end
 
 --[=[
-@within Steward
+	Dumps the difference between two Steward snapshots to the console
 
-Dumps the difference between two Steward snapshots to the debug console
+	@within Steward
 
-@param a Snapshot -- First snapshot
-@param b Snapshot -- Second snapshot
-@return string
+	@param a Snapshot -- First snapshot
+	@param b Snapshot -- Second snapshot
+	@return string
 ]=]
 function Steward.Diff(a: Snapshot, b: Snapshot): string
 	const text = Debug.Diff(a, b)
