@@ -51,12 +51,12 @@ TouchObserver.__index = TouchObserver
 ]=]
 const function ResolveCharacter(Hit: BasePart): (Model?, Humanoid?)
 	const Character = Hit.Parent
-	if not Character then return end
+	if not Character then return nil, nil end
 	
 	const Humanoid = Character:FindFirstChildOfClass("Humanoid")
-	if not Humanoid then return end
+	if not Humanoid then return nil, nil end
 	
-	return Character, Humanoid
+	return Character :: Model, Humanoid
 end
 
 --[=[
@@ -76,14 +76,14 @@ const function PassesFilters(self: TouchObserver, Character: Model, Humanoid: Hu
 	if not self._Filters then
 		return true
 	end
-	
-	for _, Filter in self._Filters do
+
+	for _, Filter in self._Filters :: {(Model, Humanoid) -> boolean} do
 		const Result = Filter(Character, Humanoid)
 		if not Result then
 			return false
 		end
 	end
-	
+
 	return true
 end
 
@@ -102,43 +102,43 @@ end
 ]=]
 function TouchObserver.new(Part: BasePart, Cooldown: number?): TouchObserver
 	const self = setmetatable({} :: TouchObserver, TouchObserver)
-	
+
 	self.Part = Part
 	self.Cooldown = Cooldown or 0.15
 	self._Touches = {}
 	self._Filters = {}
-	
+
 	self._Alive = true
-	
+
 	self.PlayerTouched = Signal.new() :: Signal.Signal<Player>
 	self.CharacterTouched = Signal.new() :: Signal.Signal<Model>
 	self.HumanoidTouched = Signal.new() :: Signal.Signal<Humanoid>
-	
+
 	self._Connection = Part.Touched:Connect(function(Hit: BasePart)
 		if not self._Alive then return end
 		const Character, Humanoid = ResolveCharacter(Hit)
 		if not Character or not Humanoid then return end
-		
+
 		if not PassesFilters(self, Character, Humanoid) then
 			return
 		end
-		
+
 		const Time = tick()
 		const Last = self._Touches[Character]
-		
+
 		if Last and (Time - Last) < self.Cooldown then return end
-		
+
 		self._Touches[Character] = Time
-		
+
 		const Player = Players:GetPlayerFromCharacter(Character)
-		
+
 		self.CharacterTouched:Fire(Character)
 		self.HumanoidTouched:Fire(Humanoid)
-		
+
 		if not Player then return end
 		self.PlayerTouched:Fire(Player)
 	end)
-	
+
 	return self
 end
 
@@ -153,12 +153,12 @@ end
 
 	@return TouchObserver
 ]=]
-const function TouchObserver.AddFilter(self: TouchObserver, FilterFunction: () -> boolean): TouchObserver
+function TouchObserver.AddFilter(self: TouchObserver, FilterFunction: (Model, Humanoid) -> boolean): TouchObserver
 	if not self._Filters then
 		self._Filters = {}
 	end
 	
-	table.insert(self._Filters, FilterFunction)
+	table.insert(self._Filters :: {(Model, Humanoid) -> boolean}, FilterFunction)
 	return self
 end
 
@@ -173,7 +173,7 @@ end
 
 	@return void
 ]=]
-const function TouchObserver.SetCooldown(self: TouchObserver, Cooldown: number): ()
+function TouchObserver.SetCooldown(self: TouchObserver, Cooldown: number): ()
 	if Cooldown <= 0 then return end
 	self.Cooldown = Cooldown
 end
@@ -186,7 +186,7 @@ end
 
 	@return void
 ]=]
-const function TouchObserver:Destroy(): ()
+function TouchObserver:Destroy(): ()
 	self._Alive = false
 	
 	if self._Connection then
