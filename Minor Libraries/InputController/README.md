@@ -106,4 +106,4 @@ local InputController = require(path.to.module)
 
 ## Dependency
 InputController requires one dependency: the Signal module.
-[Here](https://github.com/Sleitnick/RbxUtil/blob/main/modules/signal/init.luau) is a link to Sleitnick's Signal module.
+[Here](https://github.com/Sleitnick/RbxUtil/tree/main/modules/signal) is a link to Sleitnick's Signal module.
