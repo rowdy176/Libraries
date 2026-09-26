@@ -1,6 +1,6 @@
 --!strict
 --[=[
-	@class Retry
+	@class Grit
 	
 	A small resilience library for retrying fallible operations
 	with exponential backoff and jitter.
@@ -27,15 +27,15 @@ export type BackoffConfig = {
 
 -----===== Constants =====-----
 const RNG    = Random.new()
-const Prefix = "[Retry | ModuleScript]:"
+const Prefix = "[Grit | ModuleScript]:"
 
 -----===== Module =====-----
-const Retry = {}
+const Grit = {}
 
 -----===== Predicates =====-----
 
 --[=[
-	@within Retry
+	@within Grit
 	@prop Predicates
 	
 	A set of ready-made Retryable classifiers for common services.
@@ -44,13 +44,13 @@ const Retry = {}
 	
 	Unknown/unrecognized errors always return false.
 ]=]
-Retry.Predicates = {}
+Grit.Predicates = {}
 
-function Retry.Predicates.Always(): boolean
+function Grit.Predicates.Always(): boolean
 	return true
 end
 
-function Retry.Predicates.Never(): boolean
+function Grit.Predicates.Never(): boolean
 	return false
 end
 
@@ -62,7 +62,7 @@ const DataStoreTransient = {
 	"rejected the request"
 }
 
-function Retry.Predicates.DataStore(err: any): boolean
+function Grit.Predicates.DataStore(err: any): boolean
 	if typeof(err) ~= "string" then return false end
 	for _, pattern in DataStoreTransient do
 		if string.find(err, pattern, 1, true) then
@@ -76,7 +76,7 @@ end
 -----===== Internal =====-----
 
 --[=[
-	@within Retry
+	@within Grit
 	@function ComputeDelay
 	@private
 	
@@ -116,7 +116,7 @@ end
 -----===== Public API =====-----
 
 --[=[
-	@within Retry
+	@within Grit
 	@method WithBackoff
 	
 	@param callback () -> ...any
@@ -133,7 +133,7 @@ end
 	Delays use task.wait, so this yields and must not be called from
 	a context where yielding is forbidden.
 ]=]
-function Retry.WithBackoff(callback: () -> ...any, config: BackoffConfig?): (boolean, ...any)
+function Grit.WithBackoff(callback: () -> ...any, config: BackoffConfig?): (boolean, ...any)
 	assert(typeof(callback) == "function", `{Prefix} Callback must be a function!`)
 	
 	const cfg: BackoffConfig = config and table.clone(config) or {}
@@ -144,7 +144,7 @@ function Retry.WithBackoff(callback: () -> ...any, config: BackoffConfig?): (boo
 	cfg.Jitter      = cfg.Jitter or "Full"
 	
 	const retryable    = cfg.Retryable or function(err: any)
-		return Retry.Predicates.DataStore(err) or not RunService:IsStudio()
+		return Grit.Predicates.DataStore(err) or not RunService:IsStudio()
 	end
 	const shouldCancel = cfg.ShouldCancel
 	const onRetry      = cfg.OnRetry
@@ -181,4 +181,4 @@ function Retry.WithBackoff(callback: () -> ...any, config: BackoffConfig?): (boo
 end
 
 -----===== Return =====-----
-return Retry
+return Grit
