@@ -174,7 +174,7 @@ function Scheduler.new(config: {[any]: any}?): Scheduler
 	self._tasks          = {} :: {{ID: number, Task: () -> ()}}
 	self._waitingQueue   = false :: boolean
 	self._queueThread    = nil :: thread?
-	self._alive           = {} :: {[number]: boolean}
+	self._alive          = {} :: {[number]: boolean}
 	self._tombstone      = {} :: {[number]: boolean}
 	self._queue          = {} :: {
 		{
